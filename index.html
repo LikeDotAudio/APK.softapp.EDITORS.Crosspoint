@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crosspoint Matrix Routing Editor — APK.audio</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #0f1218; color: #e2e8f0; margin: 0; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #283348; padding-bottom: 12px; margin-bottom: 20px; }
+    .matrix-table { border-collapse: collapse; font-family: monospace; font-size: 12px; background: #171d27; border-radius: 6px; overflow: hidden; }
+    th, td { border: 1px solid #2d384e; padding: 8px 12px; text-align: center; }
+    th { background: #1e2636; color: #94a3b8; }
+    .cell-btn { width: 24px; height: 24px; border-radius: 4px; border: 1px solid #334155; background: #0f131a; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .cell-btn.active { background: #0284c7; border-color: #38bdf8; color: #fff; box-shadow: 0 0 8px #38bdf8; }
+    button { background: #0284c7; color: #fff; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span style="font-size:20px;">🔲</span>
+      <h2>Crosspoint Matrix Routing Editor</h2>
+    </div>
+    <button id="btn-export">Export Matrix Snapshot</button>
+  </header>
+
+  <p style="color:#94a3b8; font-size:13px; margin-bottom:16px;">Interactive N×M crosspoint matrix (Click intersections to route signals):</p>
+  <div style="overflow-x:auto;">
+    <table class="matrix-table" id="matrix"></table>
+  </div>
+
+  <script type="module">
+    import { CrosspointMatrixModel } from './js/crosspointApp.js';
+    const model = new CrosspointMatrixModel(8, 8);
+    const table = document.getElementById('matrix');
+
+    function renderMatrix() {
+      table.innerHTML = '';
+      const headerRow = document.createElement('tr');
+      headerRow.innerHTML = '<th>SRC \\ DST</th>' + model.destinations.map(d => `<th>${d}</th>`).join('');
+      table.appendChild(headerRow);
+
+      model.sources.forEach((s, sIdx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<th style="text-align:left;">${s}</th>`;
+        model.destinations.forEach((d, dIdx) => {
+          const td = document.createElement('td');
+          const isConn = model.isConnected(sIdx, dIdx);
+          const btn = document.createElement('button');
+          btn.className = `cell-btn ${isConn ? 'active' : ''}`;
+          btn.textContent = isConn ? '●' : '';
+          btn.addEventListener('click', () => {
+            model.toggle(sIdx, dIdx);
+            renderMatrix();
+          });
+          td.appendChild(btn);
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+    }
+
+    document.getElementById('btn-export').addEventListener('click', () => {
+      const data = { sources: model.sources, destinations: model.destinations, crosspoints: Array.from(model.crosspoints) };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'crosspoint-matrix.json';
+      a.click();
+    });
+
+    renderMatrix();
+  </script>
+</body>
+</html>

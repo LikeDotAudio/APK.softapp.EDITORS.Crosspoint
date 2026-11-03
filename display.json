@@ -1,0 +1,8 @@
+{
+  "name": "Crosspoint Matrix Routing Editor",
+  "icon": "🔲",
+  "group": "Design",
+  "subGroup": "Routing & Matrix",
+  "description": "Crosspoint Matrix Routing Editor: visual N×M routing grid for audio and video routers; manage source-to-destination crosspoints, lock ties, disconnects, salvo presets, and level tallies.",
+  "app": "APK:Softapps/EDITORS/EDITORS.Crosspoint/index.html"
+}
