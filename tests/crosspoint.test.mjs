@@ -1,18 +1,25 @@
+// Part of the APK.audio project — http://APK.audio — made by Anthony Kuzub
+// MIT Licence. Free, for everyone, for ever. Full text in LICENSE at the root.
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CrosspointMatrixModel } from '../js/crosspointApp.js';
 
-test('CrosspointMatrixModel toggles crosspoint ties and tracks connections', () => {
-  const m = new CrosspointMatrixModel(4, 4);
-  assert.equal(m.isConnected(0, 0), true);
+import { CrosspointMatrixModel } from '../js/crosspointModel.js';
 
-  // Toggle off
-  const turnedOff = m.toggle(0, 0);
-  assert.equal(turnedOff, false);
-  assert.equal(m.isConnected(0, 0), false);
+test('Crosspoint Matrix Initialization and Diagonal Salvo', () => {
+  const model = new CrosspointMatrixModel(8, 8);
+  assert.equal(model.sources.length, 8);
+  assert.equal(model.destinations.length, 8);
+  assert.ok(model.isConnected(0, 0));
+  assert.ok(model.isConnected(1, 1));
+  assert.ok(!model.isConnected(0, 1));
 
-  // Toggle on
-  const turnedOn = m.toggle(0, 0);
-  assert.equal(turnedOn, true);
-  assert.equal(m.isConnected(0, 0), true);
+  model.toggle(0, 1);
+  assert.ok(model.isConnected(0, 1));
+
+  model.clearAll();
+  assert.ok(!model.isConnected(0, 0));
+
+  model.diagonalSalvo();
+  assert.ok(model.isConnected(0, 0));
 });
