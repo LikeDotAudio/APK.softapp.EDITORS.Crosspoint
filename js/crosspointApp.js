@@ -4,17 +4,36 @@
    cad.like.audio/host@1 (window.APKSoftapp.connectHost, vendor/apk-softapp/);
    the grid is APKTable 'crosspoint-matrix' and the destination names APKTable
    'crosspoint-destinations' (vendor/apk-table/). "Discovered" lists the routers
-   the bus knows (js/discoveredPanel.js, kinds in config/discovery.json); it
+   the bus knows (APKSoftapp.discoveredPanel, kinds in config/discovery.json); it
    shows them as found and never invents a route. */
 
 import { CrosspointMatrixModel, CROSSPOINT_BLOCK_TYPE } from './crosspointModel.js';
-import { DiscoveredPanel } from './discoveredPanel.js';
 
 export class CrosspointApp {
   constructor() {
     this.model = new CrosspointMatrixModel(8, 8);
     const S = window.APKSoftapp;
     S.inheritTheme();
+
+    S.describe({
+      name: 'Crosspoint Matrix',
+      does: 'A router crosspoint grid: which source feeds which destination, as a matrix block for the CAD. It never routes a real router.',
+      inputs: [
+        { name: 'Matrix block', from: 'the CAD (when opened from a drawing), or a .json file via Open', kind: 'file' },
+        { name: 'Discovered routers', from: 'the bus: things scanners and agents found (kinds in config/discovery.json), shown read-only', kind: 'bus' },
+      ],
+      outputs: [
+        { name: 'Matrix block', to: 'the CAD on Save & Return and on every edit; standalone Save downloads matrix.json', kind: 'file' },
+      ],
+      controls: [
+        { name: 'Crosspoint buttons', how: 'click a cell to make or break that source to destination route' },
+        { name: 'Size', how: 'pick the matrix dimension (starts a new empty grid)' },
+        { name: '1:1 Diagonal Salvo / Clear All Routes', how: 'route source n to destination n, or clear every route' },
+        { name: 'Source / destination names', how: 'edit the SRC column and the Destination table in place' },
+        { name: 'Discovered / Open / Save & Return / Close', how: 'header buttons' },
+      ],
+      problems: ['bad_json', 'bad_input', 'file_unreadable', 'not_in_cad', 'bus_missing'],
+    });
 
     this.initElements();
     this.host = S.connectHost({
@@ -23,12 +42,14 @@ export class CrosspointApp {
       onLoad: (block, meta) => this.handleBlockLoaded(block, meta),
       onRequest: () => this.model.toBlock(),
     });
-    this.discovered = new DiscoveredPanel({
-      tableId: 'crosspoint-discovered',
-      tableHost: document.getElementById('discovered-table'),
-      statusEl: document.getElementById('discovered-status'),
-      configUrl: new URL('../config/discovery.json', import.meta.url),
-    });
+    // the Discovered panel is the shared client's (ROAD-3502); start() draws it once, on first show
+    this.discovered = {
+      start: () => (this.discoveredRun ||= window.APKSoftapp?.discoveredPanel(document.getElementById('discovered-table'), {
+        id: 'crosspoint-discovered',
+        status: document.getElementById('discovered-status'),
+        configUrl: new URL('../config/discovery.json', import.meta.url),
+      })),
+    };
     this.attachEvents();
     this.render();
   }
@@ -70,10 +91,11 @@ export class CrosspointApp {
   }
 
   handleBlockLoaded(block, meta = {}) {
-    if (!this.model.fromBlock(block)) return;
+    if (!this.model.fromBlock(block)) return false;
     const tag = document.getElementById('block-tag');
     if (tag && (meta.title || meta.blockName)) tag.textContent = meta.title || meta.blockName;
     this.render();
+    return true;
   }
 
   saveBlock() {
@@ -137,12 +159,23 @@ export class CrosspointApp {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
+      const retry = () => this.promptOpen();
+      reader.onerror = () => window.APKSoftapp.showProblem('file_unreadable', {
+        subject: file.name, detail: reader.error && reader.error.message, onRetry: retry,
+      });
       reader.onload = (re) => {
         try {
-          this.handleBlockLoaded(JSON.parse(re.target.result), { title: file.name });
+          if (!this.handleBlockLoaded(JSON.parse(re.target.result), { title: file.name })) {
+            throw new TypeError('no "sources" and "destinations" lists: this is not a matrix block');
+          }
           this.host.changed(this.model.toBlock());
         } catch (err) {
-          alert('Invalid JSON matrix block');
+          window.APKSoftapp.showProblem(err instanceof SyntaxError ? 'bad_json' : 'bad_input', {
+            subject: file.name,
+            detail: err.message,
+            fix: ['Open a crosspoint matrix block .json (Save & Return outside the CAD downloads matrix.json).'],
+            onRetry: retry,
+          });
         }
       };
       reader.readAsText(file);
