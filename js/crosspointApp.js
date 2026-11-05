@@ -1,23 +1,36 @@
 // Part of the APK.audio project — http://APK.audio — made by Anthony Kuzub
 // MIT Licence. Free, for everyone, for ever. Full text in LICENSE at the root.
+/* crosspointApp.js — the Crosspoint editor. The block goes in and out over
+   cad.like.audio/host@1 (window.APKSoftapp.connectHost, vendor/apk-softapp/);
+   the grid is APKTable 'crosspoint-matrix' and the destination names APKTable
+   'crosspoint-destinations' (vendor/apk-table/). "Discovered" lists the routers
+   the bus knows (js/discoveredPanel.js, kinds in config/discovery.json); it
+   shows them as found and never invents a route. */
 
-import { BlockBridge } from './blockBridge.js';
-import { CrosspointMatrixModel } from './crosspointModel.js';
+import { CrosspointMatrixModel, CROSSPOINT_BLOCK_TYPE } from './crosspointModel.js';
+import { DiscoveredPanel } from './discoveredPanel.js';
 
 export class CrosspointApp {
   constructor() {
     this.model = new CrosspointMatrixModel(8, 8);
-
-    this.bridge = new BlockBridge({
-      name: 'Crosspoint Matrix',
-      type: 'crosspoint_matrix',
-      onBlockLoaded: (block, meta) => this.handleBlockLoaded(block, meta),
-      onBlockChanged: () => {},
-    });
+    const S = window.APKSoftapp;
+    S.inheritTheme();
 
     this.initElements();
+    this.host = S.connectHost({
+      editor: 'Crosspoint Matrix',
+      blockType: CROSSPOINT_BLOCK_TYPE,
+      onLoad: (block, meta) => this.handleBlockLoaded(block, meta),
+      onRequest: () => this.model.toBlock(),
+    });
+    this.discovered = new DiscoveredPanel({
+      tableId: 'crosspoint-discovered',
+      tableHost: document.getElementById('discovered-table'),
+      statusEl: document.getElementById('discovered-status'),
+      configUrl: new URL('../config/discovery.json', import.meta.url),
+    });
     this.attachEvents();
-    this.loadInitialData();
+    this.render();
   }
 
   initElements() {
@@ -25,8 +38,9 @@ export class CrosspointApp {
     this.btnSave = document.getElementById('btn-save');
     this.btnClose = document.getElementById('btn-close');
     this.btnSyncDiscovered = document.getElementById('btn-sync-discovered');
-
-    this.matrixTable = document.getElementById('matrix-table');
+    this.discoveredPanelEl = document.getElementById('discovered-panel');
+    this.matrixHost = document.getElementById('matrix-table');
+    this.destHost = document.getElementById('destinations-table');
     this.btnDiagonal = document.getElementById('btn-diagonal');
     this.btnClear = document.getElementById('btn-clear');
     this.selectDim = document.getElementById('select-dimensions');
@@ -36,144 +50,82 @@ export class CrosspointApp {
   attachEvents() {
     this.btnOpen?.addEventListener('click', () => this.promptOpen());
     this.btnSave?.addEventListener('click', () => this.saveBlock());
-    this.btnClose?.addEventListener('click', () => this.bridge.close());
-    this.btnSyncDiscovered?.addEventListener('click', () => this.loadFromDiscoveredProject());
-
+    this.btnClose?.addEventListener('click', () => this.host.close());
+    this.btnSyncDiscovered?.addEventListener('click', () => {
+      if (this.discoveredPanelEl) this.discoveredPanelEl.hidden = !this.discoveredPanelEl.hidden;
+      this.discovered.start();
+    });
     this.selectDim?.addEventListener('change', (e) => {
       const dim = parseInt(e.target.value, 10);
       this.model = new CrosspointMatrixModel(dim, dim);
-      this.render();
-      this.bridge.notifyChanged();
+      this.changed();
     });
-
-    this.btnDiagonal?.addEventListener('click', () => {
-      this.model.diagonalSalvo();
-      this.render();
-      this.bridge.notifyChanged();
-    });
-
-    this.btnClear?.addEventListener('click', () => {
-      this.model.clearAll();
-      this.render();
-      this.bridge.notifyChanged();
-    });
+    this.btnDiagonal?.addEventListener('click', () => { this.model.diagonalSalvo(); this.changed(); });
+    this.btnClear?.addEventListener('click', () => { this.model.clearAll(); this.changed(); });
   }
 
-  loadInitialData() {
-    this.loadFromDiscoveredProject().catch(() => {
-      this.render();
-    });
-  }
-
-  async loadFromDiscoveredProject() {
-    try {
-      const data = await this.bridge.fetchDiscoveredProject();
-      if (data && (data.matrix || data.crosspoint || data.routes)) {
-        const raw = data.matrix || data.crosspoint || data.routes;
-        this.handleBlockLoaded(raw, { title: 'Discovered Matrix' });
-        return;
-      }
-    } catch (_) {}
+  changed() {
     this.render();
+    this.host.changed(this.model.toBlock());
   }
 
   handleBlockLoaded(block, meta = {}) {
-    if (!block) return;
-    if (Array.isArray(block.sources) && Array.isArray(block.destinations)) {
-      this.model.sources = block.sources;
-      this.model.destinations = block.destinations;
-      this.model.matrix = block.matrix || Array.from({ length: block.sources.length }, () => Array(block.destinations.length).fill(false));
-    }
+    if (!this.model.fromBlock(block)) return;
+    const tag = document.getElementById('block-tag');
+    if (tag && (meta.title || meta.blockName)) tag.textContent = meta.title || meta.blockName;
     this.render();
   }
 
   saveBlock() {
-    const block = {
-      type: 'crosspoint_matrix',
-      sources: this.model.sources,
-      destinations: this.model.destinations,
-      matrix: this.model.matrix,
-      timestamp: new Date().toISOString(),
-    };
-    this.bridge.saveBlock(block, {
+    this.host.save(this.model.toBlock(), {
       title: `Matrix ${this.model.sources.length}×${this.model.destinations.length}`,
-      filename: `matrix_${Date.now()}`,
+      filename: 'matrix',
     });
   }
 
   render() {
     this.renderMatrix();
-    this.renderTelemetry();
+    this.renderDestinations();
+    this.activeRoutesEl.textContent = `${this.model.activeRoutes()} Active Routes`;
   }
 
-  renderTelemetry() {
-    let active = 0;
-    this.model.matrix.forEach(row => {
-      row.forEach(cell => { if (cell) active++; });
-    });
-    this.activeRoutesEl.textContent = `${active} Active Routes`;
+  crosspointButton(s, d) {
+    const on = this.model.isConnected(s, d);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `matrix-btn${on ? ' active' : ''}`;
+    btn.title = `${this.model.sources[s]} → ${this.model.destinations[d]}`;
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.textContent = on ? '●' : '';
+    btn.addEventListener('click', () => { this.model.toggle(s, d); this.changed(); });
+    return btn;
   }
 
   renderMatrix() {
-    this.matrixTable.innerHTML = '';
-
-    // Header row (Destinations)
-    const headerRow = document.createElement('tr');
-    headerRow.innerHTML = '<th>SRC \\ DST</th>';
-    this.model.destinations.forEach((d, dIdx) => {
-      const th = document.createElement('th');
-      th.innerHTML = `<input type="text" class="cell-input text-center" style="width:75px; font-weight:bold; color:var(--osc-accent-secondary);" data-type="dst" data-idx="${dIdx}" value="${d}">`;
-      headerRow.appendChild(th);
+    const columns = [{ key: 'src', label: 'SRC \\ DST', mono: true }];
+    this.model.destinations.forEach((name, d) => {
+      columns.push({ key: `d${d}`, label: name, align: 'center', render: (_v, _row, s) => this.crosspointButton(s, d) });
     });
-    this.matrixTable.appendChild(headerRow);
-
-    // Source rows
-    this.model.sources.forEach((s, sIdx) => {
-      const tr = document.createElement('tr');
-      const rowTh = document.createElement('th');
-      rowTh.style.textAlign = 'left';
-      rowTh.innerHTML = `<input type="text" class="cell-input" style="width:90px; font-weight:bold; color:var(--osc-accent-primary);" data-type="src" data-idx="${sIdx}" value="${s}">`;
-      tr.appendChild(rowTh);
-
-      this.model.destinations.forEach((d, dIdx) => {
-        const td = document.createElement('td');
-        const isConn = this.model.isConnected(sIdx, dIdx);
-        const btn = document.createElement('button');
-        btn.className = `matrix-btn ${isConn ? 'active' : ''}`;
-        btn.style.width = '24px';
-        btn.style.height = '24px';
-        btn.style.borderRadius = '3px';
-        btn.style.cursor = 'pointer';
-        btn.style.background = isConn ? 'var(--osc-accent-primary)' : 'var(--osc-bg-input)';
-        btn.style.border = `1px solid ${isConn ? 'var(--osc-accent-primary)' : 'var(--osc-border-default)'}`;
-        btn.style.color = isConn ? '#000' : 'transparent';
-        btn.textContent = isConn ? '●' : '';
-
-        btn.addEventListener('click', () => {
-          this.model.toggle(sIdx, dIdx);
-          this.render();
-          this.bridge.notifyChanged();
-        });
-
-        td.appendChild(btn);
-        tr.appendChild(td);
-      });
-
-      this.matrixTable.appendChild(tr);
+    this.matrixTable = window.APKTable.create(this.matrixHost, {
+      id: 'crosspoint-matrix',
+      sortable: false,
+      columns,
+      rows: this.model.rows(),
+      onEdit: (s, key, value) => { if (key === 'src') { this.model.renameSource(s, value); this.host.changed(this.model.toBlock()); } },
+      empty: 'No sources.',
     });
+  }
 
-    // Rename inputs
-    this.matrixTable.querySelectorAll('.cell-input').forEach(input => {
-      input.addEventListener('input', (e) => {
-        const idx = parseInt(e.target.dataset.idx, 10);
-        const type = e.target.dataset.type;
-        if (type === 'src') {
-          this.model.sources[idx] = e.target.value;
-        } else {
-          this.model.destinations[idx] = e.target.value;
-        }
-        this.bridge.notifyChanged();
-      });
+  renderDestinations() {
+    this.destTable = window.APKTable.create(this.destHost, {
+      id: 'crosspoint-destinations',
+      columns: [
+        { key: 'n', label: '#', type: 'number', editable: false },
+        { key: 'name', label: 'Destination' },
+      ],
+      rows: this.model.destinations.map((name, d) => ({ n: d + 1, name })),
+      onEdit: (d, key, value) => { if (key === 'name') { this.model.renameDestination(d, value); this.changed(); } },
+      empty: 'No destinations.',
     });
   }
 
@@ -187,8 +139,8 @@ export class CrosspointApp {
       const reader = new FileReader();
       reader.onload = (re) => {
         try {
-          const parsed = JSON.parse(re.target.result);
-          this.handleBlockLoaded(parsed, { title: file.name });
+          this.handleBlockLoaded(JSON.parse(re.target.result), { title: file.name });
+          this.host.changed(this.model.toBlock());
         } catch (err) {
           alert('Invalid JSON matrix block');
         }

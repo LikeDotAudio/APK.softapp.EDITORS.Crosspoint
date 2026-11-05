@@ -1,0 +1,4 @@
+{
+  "_about": "Which discovered things the Crosspoint's 'Routers on the network' panel lists. kinds: case-insensitive substrings of a protocol name, a scanner kind segment or a device_class (APKSoftapp.discovered): NMOS (IS-05 connection), Ember+ and anything whose class says router or matrix. An empty list shows everything on the bus. Tunable only: no code holds a device list.",
+  "kinds": ["nmos", "ember", "router", "matrix"]
+}

@@ -6,10 +6,11 @@
   <title>Crosspoint Matrix Routing Editor · Standalone Block Editor</title>
   <link rel="stylesheet" href="./vendor/apk-contracts/apk-tokens.css">
   <link rel="stylesheet" href="./css/theme.css">
+  <link rel="stylesheet" href="./vendor/apk-table/apk-table.css">
   <style>
     .crosspoint-container {
-      display: grid;
-      grid-template-rows: auto 1fr;
+      display: flex;
+      flex-direction: column;
       height: calc(100vh - 40px);
       overflow: hidden;
     }
@@ -49,6 +50,9 @@
     }
 
     .matrix-stage {
+      flex: 1;
+      min-height: 0;
+      gap: 24px;
       background: radial-gradient(circle at 50% 50%, #1e1e24 0%, #121212 100%);
       display: flex;
       align-items: flex-start;
@@ -57,47 +61,45 @@
       overflow: auto;
     }
 
-    table.matrix-table {
-      border-collapse: collapse;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      background: var(--osc-bg-surface);
-      border: 1px solid var(--osc-border-default);
-      border-radius: 4px;
-      overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    }
+    .matrix-host { font-family: var(--font-mono); }
+    .dest-host { min-width: 220px; }
 
-    table.matrix-table th {
+    .matrix-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 3px;
+      cursor: pointer;
       background: var(--osc-bg-input);
       border: 1px solid var(--osc-border-default);
-      padding: 6px 8px;
-      color: var(--osc-text-muted);
-      font-weight: 600;
+      color: transparent;
     }
 
-    table.matrix-table td {
-      border: 1px solid var(--osc-border-default);
-      padding: 4px;
-      text-align: center;
-      background: var(--osc-bg-base);
-    }
-
-    .cell-input {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--osc-text-primary);
-      padding: 2px 4px;
-      font-size: 11px;
-      border-radius: 2px;
-      font-family: inherit;
-    }
-
-    .cell-input:focus {
-      background: var(--osc-bg-input);
+    .matrix-btn.active {
+      background: var(--osc-accent-primary);
       border-color: var(--osc-accent-primary);
-      outline: none;
+      color: #000;
     }
+
+    .discovered-panel {
+      border-bottom: 1px solid var(--osc-border-default);
+      padding: 8px 14px;
+      max-height: 40vh;
+      overflow: auto;
+    }
+
+    .discovered-panel[hidden] { display: none; }
+
+    .discovered-head {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    [data-apk-state="good"] { color: var(--apk-state-good); }
+    [data-apk-state="kinda"] { color: var(--apk-state-kinda); }
+    [data-apk-state="dead"] { color: var(--apk-state-dead); }
 
     .text-center {
       text-align: center;
@@ -112,7 +114,7 @@
       <span class="window-pill" id="block-tag">STANDALONE BLOCK EDITOR</span>
     </div>
     <div class="window-actions">
-      <button class="btn btn-secondary" id="btn-sync-discovered" title="Load live routing from Discovered Project">
+      <button class="btn btn-secondary" id="btn-sync-discovered" title="Show the routers on the network (the bus), live">
         <span class="btn-icon">⚡</span> Discovered
       </button>
       <button class="btn btn-secondary" id="btn-open" title="Open block JSON">
@@ -145,11 +147,24 @@
       </div>
     </div>
 
+    <section id="discovered-panel" class="discovered-panel" hidden>
+      <div class="discovered-head">
+        <strong>Routers on the network</strong>
+        <span id="discovered-status" class="discovered-status" data-apk-state="kinda">Not started.</span>
+      </div>
+      <div id="discovered-table"></div>
+    </section>
+
     <main class="matrix-stage">
-      <table class="matrix-table" id="matrix-table"></table>
+      <div id="matrix-table" class="matrix-host"></div>
+      <div id="destinations-table" class="dest-host"></div>
     </main>
   </div>
 
+  <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
+  <script src="/FrontEnd/shared/apk-bus.js"></script>
+  <script src="./vendor/apk-softapp/apk-softapp.js"></script>
+  <script src="./vendor/apk-table/apk-table.js"></script>
   <script type="module" src="./js/crosspointApp.js"></script>
 </body>
 </html>
