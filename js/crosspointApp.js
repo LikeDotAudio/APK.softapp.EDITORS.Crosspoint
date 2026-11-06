@@ -8,6 +8,7 @@
    shows them as found and never invents a route. */
 
 import { CrosspointMatrixModel, CROSSPOINT_BLOCK_TYPE } from './crosspointModel.js';
+import { crosspointToIfc, crosspointFromIfc } from './crosspointIfc.js';
 
 export class CrosspointApp {
   constructor() {
@@ -19,11 +20,12 @@ export class CrosspointApp {
       name: 'Crosspoint Matrix',
       does: 'A router crosspoint grid: which source feeds which destination, as a matrix block for the CAD. It never routes a real router.',
       inputs: [
-        { name: 'Matrix block', from: 'the CAD (when opened from a drawing), or a .json file via Open', kind: 'file' },
+        { name: 'Matrix block', from: 'the CAD (when opened from a drawing), or via Open: the .json or its .ifc twin (APKSoftapp.openModel)', kind: 'file' },
         { name: 'Discovered routers', from: 'the bus: things scanners and agents found (kinds in config/discovery.json), shown read-only', kind: 'bus' },
       ],
       outputs: [
-        { name: 'Matrix block', to: 'the CAD on Save & Return and on every edit; standalone Save downloads matrix.json', kind: 'file' },
+        { name: 'Matrix block', to: 'the CAD on Save & Return and on every edit; standalone, Save Model writes matrix.json beside its .ifc twin', kind: 'file' },
+        { name: 'IFC twin', to: 'matrix.ifc (IFC4X3_ADD2) with the .json when standalone: the router an IfcAudioVisualAppliance SWITCHER, sources SINK ports, destinations SOURCE ports, the saved routes APK_CrosspointRoute (js/crosspointIfc.js)', kind: 'file' },
       ],
       controls: [
         { name: 'Crosspoint buttons', how: 'click a cell to make or break that source to destination route' },
@@ -32,7 +34,7 @@ export class CrosspointApp {
         { name: 'Source / destination names', how: 'edit the SRC column and the Destination table in place' },
         { name: 'Discovered / Open / Save & Return / Close', how: 'header buttons' },
       ],
-      problems: ['bad_json', 'bad_input', 'file_unreadable', 'not_in_cad', 'bus_missing'],
+      problems: ['bad_json', 'bad_input', 'file_unreadable', 'not_in_cad', 'bus_missing', 'save_failed'],
     });
 
     this.initElements();
@@ -98,11 +100,15 @@ export class CrosspointApp {
     return true;
   }
 
-  saveBlock() {
-    this.host.save(this.model.toBlock(), {
-      title: `Matrix ${this.model.sources.length}×${this.model.destinations.length}`,
-      filename: 'matrix',
-    });
+  /** In the CAD: the block back to the drawing. Standalone: Save Model, the .json AND its .ifc twin, both or neither. */
+  async saveBlock() {
+    const S = window.APKSoftapp;
+    const block = this.model.toBlock();
+    const meta = { title: `Matrix ${this.model.sources.length}×${this.model.destinations.length}`, filename: 'matrix' };
+    if (this.host.embedded || typeof S.saveModel !== 'function') return this.host.save(block, meta);
+    const r = await S.saveModel(block, { name: meta.filename, toIfc: (b) => crosspointToIfc(b, { name: meta.filename }) });
+    if (!r.ok && !r.cancelled) S.showProblem(r.problem || 'save_failed', { onRetry: () => this.saveBlock() });
+    return r.ok ? 'model' : '';
   }
 
   render() {
@@ -151,36 +157,28 @@ export class CrosspointApp {
     });
   }
 
-  promptOpen() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      const retry = () => this.promptOpen();
-      reader.onerror = () => window.APKSoftapp.showProblem('file_unreadable', {
-        subject: file.name, detail: reader.error && reader.error.message, onRetry: retry,
-      });
-      reader.onload = (re) => {
-        try {
-          if (!this.handleBlockLoaded(JSON.parse(re.target.result), { title: file.name })) {
-            throw new TypeError('no "sources" and "destinations" lists: this is not a matrix block');
-          }
-          this.host.changed(this.model.toBlock());
-        } catch (err) {
-          window.APKSoftapp.showProblem(err instanceof SyntaxError ? 'bad_json' : 'bad_input', {
-            subject: file.name,
-            detail: err.message,
-            fix: ['Open a crosspoint matrix block .json (Save & Return outside the CAD downloads matrix.json).'],
-            onRetry: retry,
-          });
+  /** Open: the matrix block .json or its .ifc twin (APKSoftapp.openModel), the same path a CAD load takes. */
+  async promptOpen() {
+    const S = window.APKSoftapp;
+    const o = await S.openModel({
+      fromIfc: (text) => crosspointFromIfc(text),
+      fromJson: (data) => {
+        if (!data || !Array.isArray(data.sources) || !Array.isArray(data.destinations)) {
+          throw new TypeError('no "sources" and "destinations" lists: this is not a matrix block');
         }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+        return data;
+      },
+    });
+    if (!o.ok) {
+      if (!o.cancelled && o.problem) {
+        S.showProblem(o.problem, {
+          fix: ['Open a crosspoint matrix block .json or its .ifc twin (Save Model outside the CAD writes matrix.json and matrix.ifc).'],
+          onRetry: () => this.promptOpen(),
+        });
+      }
+      return;
+    }
+    if (this.handleBlockLoaded(o.model, { title: o.name })) this.host.changed(this.model.toBlock());
   }
 }
 
